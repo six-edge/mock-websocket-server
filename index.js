@@ -1,4 +1,4 @@
-// support complex message handler
+// support complex message handling
 // e.g. change response based on request (id_job)
 
 const app = document.getElementById("app")
@@ -22,7 +22,7 @@ responseSet.add({
     header: {
       id_job: req.header.id_job
     },
-    data: "rofl"
+    data: `rofl ${Math.random()}`
   }),
   delayMs: 200,
 })
@@ -34,7 +34,7 @@ responseSet.add({
     header: {
       id_job: req.header.id_job
     },
-    data: "copter"
+    data: `copter ${Math.random()}`
   }),
   delayMs: 2000,
 })
@@ -87,7 +87,8 @@ async function run() {
   })
   log('response', res2)
   
-  
+  const errRes = await onMessage({})
+  log('response', errRes)
 }
 
 run()
