@@ -1,7 +1,9 @@
-// support complex message handling
-// e.g. change response based on request (id_job)
+import { WebSocket, Server } from "https://unpkg.com/mock-socket@9.1.3/dist/mock-socket.es.mjs"
+import { responseSet } from './responseSet.js'
 
 const app = document.getElementById("app")
+
+// Logger
 
 function log(msg, data = "") {
   const str = JSON.stringify(data, null, 2)
@@ -9,46 +11,10 @@ function log(msg, data = "") {
   const out = data ? `${msg}: ${str}` : msg
   p.innerHTML = out
   app.appendChild(p)
-  console.log(out)
 }
 
-// response catalog
-const responseSet = new Set()
+// Map request to response
 
-responseSet.add({
-  matches: (req) => req.path === "/api/v1",
-  create: (req) => ({
-    Message: "HighLevelResponse",
-    header: {
-      id_job: req.header.id_job
-    },
-    data: `rofl ${Math.random()}`
-  }),
-  delayMs: 200,
-  closeConnection: false
-})
-
-responseSet.add({
-  matches: (req) => req.path === "/api/v2",
-  create: (req) => ({
-    Message: "HighLevelResponse",
-    header: {
-      id_job: req.header.id_job
-    },
-    data: `copter ${Math.random()}`
-  }),
-  delayMs: 2000,
-  closeConnection: false,
-})
-
-responseSet.add({
-  matches: (req) => req.path === "/api/v3",
-  create: (req) => false,
-  delayMs: 3000,
-  closeConnection: true,
-})
-
-// server
 async function getResponse(req) {
   for (let res of responseSet) {
     if (res.matches(req)) {
@@ -65,56 +31,75 @@ async function getResponse(req) {
   throw new Error("No matching response.")
 }
 
-async function onMessage(msg) {
-  try {
-    return await getResponse(msg)
-  } 
-  catch (e) {
-    if (e.message === "Close") {
-      return {
-        Message: "ClosingSocket"
+// Mock WebSocket Server
+
+const wsUrl = 'ws://localhost:8080'
+const server = new Server(wsUrl)
+
+server.on('connection', async socket => {
+  console.log('Client connected')
+  socket.on('message', async (msg) => { 
+    const send = (data) => socket.send(JSON.stringify(data))
+    const obj = JSON.parse(msg)
+    try {
+      send(await getResponse(obj)) 
+    }
+    catch (e) {
+      if (e.message === "Close") {
+        console.log('Server closing socket')
+        return socket.close()
       }
+      send({
+        Message: "ErrorResponse",
+        reason: {
+          value: 1000
+        },
+        description: e.message
+      })
     }
-    return {
-      Message: "ErrorResponse",
-      reason: {
-        value: 1000
-      },
-      description: e.message
-    }
-  }
+  })
+})
+
+// WebSocket Client
+
+const client = new WebSocket(wsUrl)
+
+client.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+  log('response', data)
 }
 
-async function run() {
-  const res = await onMessage({
+client.onopen = async () => {
+  const send = (data) => client.send(JSON.stringify(data))
+  
+  // Error: No matching response
+  send({})
+  
+  // Rofl
+  send({
     Message: "HighLevelRequest",
     header: {
       id_job: 6
     },
     path: "/api/v1"
   })
-  log('response', res)
 
-  const res2 = await onMessage({
+  // Copter
+  send({
     Message: "HighLevelRequest",
     header: {
       id_job: 7
     },
     path: "/api/v2"
   })
-  log('response', res2)
   
-  const res3 = await onMessage({
-    Message: "HighLevelRequest",
+  // Close connection after failed auth
+  send({
+    Message: "AuthRequest",
     header: {
       id_job: 8
     },
-    path: "/api/v3"
   })
-  log('response', res3)
-
-  const errRes = await onMessage({})
-  log('response', errRes)
 }
 
-run()
+client.onclose = () => console.log('Client WebSocket closed')
